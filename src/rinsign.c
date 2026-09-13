@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /* Standalone signer for the canonical RinOS v3 RIN/NDRV envelopes. */
+
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
