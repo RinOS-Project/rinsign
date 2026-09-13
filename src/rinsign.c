@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Standalone signer for the canonical RinOS v3 RIN/NDRV envelopes. */
 
 #ifndef _WIN32
