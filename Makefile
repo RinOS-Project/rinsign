@@ -5,6 +5,13 @@ CPPFLAGS ?=
 LDFLAGS ?=
 LDLIBS ?= -lcrypto
 
+# GNU make supplies a built-in `CC=cc`.  On Windows that command is often not
+# installed even when the selected GCC toolchain is available, so use gcc for
+# the built-in default while still honoring an explicit CC override.
+ifeq ($(origin CC),default)
+CC = gcc
+endif
+
 TARGET := rinsign
 OBJDIR := obj
 
