@@ -29,6 +29,7 @@
 *.dylib
 
 # Executables
+/rinsign
 *.exe
 *.out
 *.app
