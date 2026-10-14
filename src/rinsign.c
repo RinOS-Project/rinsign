@@ -291,6 +291,63 @@ static int publish(const char *temporary, const char *output) {
         fprintf(stderr, "rinsign: cannot publish %s: %s\n", output, strerror(errno));
         return -1;
     }
+    {
+        char parent[4096];
+        const size_t length = strlen(output);
+        char *slash;
+        int flags = O_RDONLY;
+        int directory;
+        struct stat info;
+        int saved_error = 0;
+        if (length == 0u || length >= sizeof(parent)) {
+            fprintf(stderr, "rinsign: output parent path is too long\n");
+            return -1;
+        }
+        memcpy(parent, output, length + 1u);
+        slash = strrchr(parent, '/');
+        if (!slash) {
+            memcpy(parent, ".", 2u);
+        } else if (slash == parent) {
+            slash[1] = '\0';
+        } else {
+            *slash = '\0';
+        }
+#ifdef O_DIRECTORY
+        flags |= O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+        flags |= O_CLOEXEC;
+#endif
+        directory = open(parent, flags);
+        if (directory < 0) {
+            fprintf(stderr, "rinsign: cannot open output directory %s: %s\n",
+                    parent, strerror(errno));
+            return -1;
+        }
+        if (fstat(directory, &info) != 0) {
+            saved_error = errno;
+            (void)close(directory);
+            errno = saved_error;
+            fprintf(stderr, "rinsign: cannot inspect output directory %s: %s\n",
+                    parent, strerror(errno));
+            return -1;
+        }
+        if (!S_ISDIR(info.st_mode)) {
+            (void)close(directory);
+            errno = ENOTDIR;
+            fprintf(stderr, "rinsign: output parent is not a directory: %s\n",
+                    parent);
+            return -1;
+        }
+        if (fsync(directory) != 0) saved_error = errno;
+        if (close(directory) != 0 && saved_error == 0) saved_error = errno;
+        if (saved_error != 0) {
+            errno = saved_error;
+            fprintf(stderr, "rinsign: cannot sync output directory %s: %s\n",
+                    parent, strerror(errno));
+            return -1;
+        }
+    }
     return 0;
 #endif
 }
@@ -392,15 +449,23 @@ int main(int argc, char **argv) {
         put16(envelope + 8, RSA_PKCS1_SHA256);
         put16(envelope + 10, (uint16_t)signature_size);
         memcpy(envelope + 12, key_id, sizeof(key_id));
+        int write_ok = 1;
         if (fwrite(image, 1, image_size, temporary_file) != image_size ||
             fwrite(envelope, 1, sizeof(envelope), temporary_file) != sizeof(envelope) ||
-            fwrite(signature, 1, signature_size, temporary_file) != signature_size ||
-            fflush(temporary_file) != 0 || fclose(temporary_file) != 0) {
-            temporary_file = NULL;
-            fprintf(stderr, "rinsign: cannot write %s\n", output);
+            fwrite(signature, 1, signature_size, temporary_file) != signature_size)
+            write_ok = 0;
+        if (write_ok && fflush(temporary_file) != 0) write_ok = 0;
+#ifdef _WIN32
+        if (write_ok && _commit(_fileno(temporary_file)) != 0) write_ok = 0;
+#else
+        if (write_ok && fsync(fileno(temporary_file)) != 0) write_ok = 0;
+#endif
+        if (fclose(temporary_file) != 0) write_ok = 0;
+        temporary_file = NULL;
+        if (!write_ok) {
+            fprintf(stderr, "rinsign: cannot write, flush, or close %s\n", output);
             goto done;
         }
-        temporary_file = NULL;
     }
     if (publish(temporary_path, output) != 0)
         goto done;
